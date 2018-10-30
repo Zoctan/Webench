@@ -1,5 +1,5 @@
 # Webench
 
-Did you hear webbench?
+Did you know webbench?
 
-yeah, this imitates it, but write by java.
+Yeah, I imitated it by Java.

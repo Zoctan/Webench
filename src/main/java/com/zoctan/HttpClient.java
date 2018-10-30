@@ -1,61 +1,27 @@
+package com.zoctan;
+
 import java.io.*;
 import java.net.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
+import static java.lang.System.err;
 import static java.lang.System.exit;
 import static java.lang.System.out;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
-public class Webench {
-    private int benchTime = 30;
-    private int clients = 1;
-    private ExecutorService threadPool = Executors.newFixedThreadPool(35);
-
-    public static void main(String[] args) {
-        Webench webench = new Webench();
-        webench.benchTime = 3;
-        webench.clients = 1;
-        webench.start();
-    }
-
-    private void start() {
-        out.printf("%d client, running %d sec.\n", clients, benchTime);
-        Runnable[] clientRuns = new HttpClient[clients];
-        for (int i = 0; i < clients; i++) {
-            clientRuns[i] = new HttpClient(i + "").setIP("localhost");
-        }
-        for (int i = 0; i < clients; i++) {
-            threadPool.execute(clientRuns[i]);
-        }
-        try {
-            if (!threadPool.awaitTermination(benchTime, SECONDS)) {
-                HttpClient.exitSemaphore = true;
-            }
-            threadPool.shutdown();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        out.printf("Speed: %d pages/sec, %d bytes/sec.\n", (HttpClient.success + HttpClient.failure) / benchTime, HttpClient.bytes / benchTime);
-        out.printf("Requests: %d succeed, %d failed.\n", HttpClient.success, HttpClient.failure);
-    }
-}
-
-class HttpClient implements Runnable {
+public class HttpClient implements Runnable {
+    // 响应不被缓存
     static boolean isReload = false;
     static boolean isRead = true;
-    static int bytes = 0;
-    static int success = 0;
-    static int failure = 0;
+    static AtomicLong bytes = new AtomicLong(0);
+    static AtomicInteger success = new AtomicInteger(0);
+    static AtomicInteger failure = new AtomicInteger(0);
     static boolean exitSemaphore = false;
-    private static Lock lock = new ReentrantLock();
     private static String ip;
     private static String method = "GET";
     private static int port = 80;
-    private static int connectTimeOut = 3000;
+    private static int connectTimeout = 3000;
     private static String protocol = "http://";
     private static String path = "/";
     private static String httpVersion = "HTTP/1.1";
@@ -71,29 +37,23 @@ class HttpClient implements Runnable {
         //out.println("Creating " + i);
     }
 
+    @Override
     public void run() {
-        //out.println("Running " + name);
         while (!exitSemaphore) {
             if (send()) {
-                lock.lock();
-                success += 1;
-                lock.unlock();
-                /* same as above
-                synchronized (Client.class) {
-                    success += 1;
-                }
-                */
+                success.incrementAndGet();
+                out.println("Running:" + name + " success:" + success.get());
             } else {
-                lock.lock();
-                failure += 1;
-                lock.unlock();
+                failure.incrementAndGet();
+                //out.println("Running:" + name + " failure:" + failure.get());
             }
         }
     }
 
+    private Pattern patternIPv4 = Pattern.compile("^(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3}$");
+    private Pattern patternIPv6 = Pattern.compile("^((([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:)|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}(:[0-9A-Fa-f]{1,4}){1,2})|(([0-9A-Fa-f]{1,4}:){4}(:[0-9A-Fa-f]{1,4}){1,3})|(([0-9A-Fa-f]{1,4}:){3}(:[0-9A-Fa-f]{1,4}){1,4})|(([0-9A-Fa-f]{1,4}:){2}(:[0-9A-Fa-f]{1,4}){1,5})|([0-9A-Fa-f]{1,4}:(:[0-9A-Fa-f]{1,4}){1,6})|(:(:[0-9A-Fa-f]{1,4}){1,7})|(([0-9A-Fa-f]{1,4}:){6}(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){5}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){4}(:[0-9A-Fa-f]{1,4})?:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){3}(:[0-9A-Fa-f]{1,4}){0,2}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){2}(:[0-9A-Fa-f]{1,4}){0,3}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|([0-9A-Fa-f]{1,4}:(:[0-9A-Fa-f]{1,4}){0,4}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(:(:[0-9A-Fa-f]{1,4}){0,5}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3}))$");
+
     private boolean isIP(String ip) {
-        Pattern patternIPv4 = Pattern.compile("^(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3}$");
-        Pattern patternIPv6 = Pattern.compile("^((([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:)|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}(:[0-9A-Fa-f]{1,4}){1,2})|(([0-9A-Fa-f]{1,4}:){4}(:[0-9A-Fa-f]{1,4}){1,3})|(([0-9A-Fa-f]{1,4}:){3}(:[0-9A-Fa-f]{1,4}){1,4})|(([0-9A-Fa-f]{1,4}:){2}(:[0-9A-Fa-f]{1,4}){1,5})|([0-9A-Fa-f]{1,4}:(:[0-9A-Fa-f]{1,4}){1,6})|(:(:[0-9A-Fa-f]{1,4}){1,7})|(([0-9A-Fa-f]{1,4}:){6}(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){5}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){4}(:[0-9A-Fa-f]{1,4})?:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){3}(:[0-9A-Fa-f]{1,4}){0,2}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(([0-9A-Fa-f]{1,4}:){2}(:[0-9A-Fa-f]{1,4}){0,3}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|([0-9A-Fa-f]{1,4}:(:[0-9A-Fa-f]{1,4}){0,4}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3})|(:(:[0-9A-Fa-f]{1,4}){0,5}:(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])(\\.(\\d|[1-9]\\d|1\\d{2}|2[0-4]\\d|25[0-5])){3}))$");
         return patternIPv4.matcher(ip).matches() || patternIPv6.matcher(ip).matches();
     }
 
@@ -113,9 +73,9 @@ class HttpClient implements Runnable {
             try {
                 InetAddress i = InetAddress.getByName(ip);
                 HttpClient.ip = i.getHostAddress();
-                out.println(HttpClient.ip);
+                //out.println(HttpClient.ip);
             } catch (UnknownHostException e) {
-                out.println("Unknown Host");
+                err.println("Unknown Host");
                 e.printStackTrace();
                 exit(1);
             }
@@ -123,8 +83,8 @@ class HttpClient implements Runnable {
         return this;
     }
 
-    HttpClient setConnectTimeOut(int connectTimeOut) {
-        HttpClient.connectTimeOut = connectTimeOut;
+    HttpClient setConnectTimeout(int connectTimeout) {
+        HttpClient.connectTimeout = connectTimeout;
         return this;
     }
 
@@ -165,7 +125,7 @@ class HttpClient implements Runnable {
         // a=1, b=2
         String[] dataArray = data.split("&");
         StringBuilder stringBuilder = new StringBuilder();
-        if (method.equals("GET")) {
+        if ("GET".equals(method)) {
             stringBuilder.append("?");
         }
         for (int i = 0; i < dataArray.length; i++) {
@@ -190,7 +150,7 @@ class HttpClient implements Runnable {
     private String getRequestHeader() {
         if (requestHeader == null) {
             StringBuilder stringBuilder = new StringBuilder();
-            if (method.equals("GET")) {
+            if ("GET".equals(method)) {
                 path += data;
             }
             stringBuilder.append(method).append(" ").append(protocol).append(ip).append(":").append(port).append(path).append(" ").append(httpVersion).append("\r\n");
@@ -201,7 +161,7 @@ class HttpClient implements Runnable {
             }
             stringBuilder.append("Connection: close\r\n");
 
-            if (method.equals("POST")) {
+            if ("POST".equals(method)) {
                 stringBuilder.append("Content-Length: ").append(data.length()).append("\r\n");
                 stringBuilder.append("Content-Type: application/x-www-form-urlencoded\r\n");
                 stringBuilder.append("\r\n");
@@ -220,9 +180,7 @@ class HttpClient implements Runnable {
             byte[] buf = new byte[1500];
             for (int len; -1 != (len = inputStream.read(buf)); ) {
                 byteArrayOutputStream.write(buf, 0, len);
-                lock.lock();
-                bytes += len;
-                lock.unlock();
+                bytes.addAndGet(len);
             }
             if (isShowResponse) {
                 out.println(byteArrayOutputStream.toString("utf-8"));
@@ -237,7 +195,7 @@ class HttpClient implements Runnable {
     private boolean send() {
         try {
             Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(ip, port), connectTimeOut);
+            socket.connect(new InetSocketAddress(ip, port), connectTimeout);
             OutputStream outputStream = socket.getOutputStream();
             outputStream.write(getRequestHeader().getBytes());
             outputStream.flush();
